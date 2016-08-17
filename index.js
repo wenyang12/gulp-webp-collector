@@ -1,6 +1,7 @@
 /**
  * 搜寻页面中的img标签图片，适配webp格式图片
  * 适配后的img标签是懒加载模式
+ * >>>同时也支持适配video标签的poster图片
  * 1. 适配前：<img src="/assets/images/test.png">
  * 2. 适配后：<img class="j-webp" data-src="/assets/images/test.png" data-webp-src="/assets/images/test.webp">
  * 支持指定私有属性`_nowebp`来跳过适配，如：
@@ -13,7 +14,7 @@
 const through2 = require('through2');
 
 // 搜索img标签
-const REG_IMG = /<img.*\s+src=["|']([^"']+)["|'][^>]*>/gi;
+const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
 // 匹配className属性
 const REG_CLASSNAME = /class=["|']([^"']+)["|']/i;
 // 匹配img标签闭合符号
@@ -54,13 +55,16 @@ const replace = (html, options) => {
     // 当图片不符合指定的图片类型，略过
     if (!isSpecialType(src, types)) return;
 
+    // 视频标签
+    let isViedeo = /^<video/.test(img);
+
     // 替换src为data-src，懒加载模式
-    img = img.replace('src=', 'data-src=');
+    img = img.replace(/(src|poster)=/, 'data-$1=');
 
     // 得出同名不同后缀的webp图片url
     let webpSrc = src.replace(new RegExp(`\\.(${types})$`, 'i'), '.webp');
     // data-webp-src附加在img最后
-    img = img.replace(REG_CLOSETAG, ` data-webp-src="${webpSrc}"$1`);
+    img = img.replace(REG_CLOSETAG, ` data-webp-${isViedeo ? 'poster' : 'src'}="${webpSrc}"$1`);
 
     let className = getClassName(img);
     // 加上指定className标识，以便业务脚本能够检测是否加载webp图片

@@ -1,0 +1,28 @@
+{
+  "name": "@tools/gulp-webp-adapter",
+  "version": "1.0.0",
+  "description": "搜寻页面中的img标签图片，适配webp格式图片",
+  "contributors": [
+    "Luoying <luoying@fxiaoke.com>"
+  ],
+  "homepage": "http://registry-npm.firstshare.cn/",
+  "main": "index.js",
+  "scripts": {
+    "eslint": "eslint index.js"
+  },
+  "pre-commit": [
+    "eslint"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "http://git.firstshare.cn/fe-tools/gulp-webp-adapter.git"
+  },
+  "author": "luoying",
+  "license": "ISC",
+  "dependencies": {
+    "through2": "^2.0.1"
+  },
+  "devDependencies": {
+    "pre-commit": "^1.1.3"
+  }
+}

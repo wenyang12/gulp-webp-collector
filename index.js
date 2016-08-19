@@ -11,7 +11,11 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const through2 = require('through2');
+const gutil = require('gulp-util');
+const File = gutil.File;
 
 // 搜索img标签
 const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
@@ -19,6 +23,11 @@ const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
 const REG_CLASSNAME = /class=["|']([^"']+)["|']/i;
 // 匹配img标签闭合符号
 const REG_CLOSETAG = /(\/?>)$/;
+
+// 匹配css资源，link外链或style内联样式
+const REG_CSS = /(?:<link.*href=["|'](.+\.css)["|'].*\/?>|<style.*>([^<]*)<\/style>)/gi;
+// 匹配css中的图片资源
+const REG_CSS_ASSETS = /url\(([^\)]+)\)/gi;
 
 const getMatchs = (data, reg) => {
   let matchs = [];
@@ -42,8 +51,40 @@ const replaceClassName = (img, className) => {
   return img.replace(has ? REG_CLASSNAME : REG_CLOSETAG, has ? `class="${className}"` : ` class="${className}"$1`);
 };
 
+const getTypes = (options) => options.imageTypes.split(',').join('|');
+
 const replace = (html, options) => {
-  let types = options.imageTypes.split(',').join('|');
+  let types = getTypes(options);
+  let imgs = collect(html, options);
+  for (let img of imgs) {
+    let tag = img.tag;
+    let src = img.src;
+    // 视频标签
+    let isViedeo = /^<video/.test(tag);
+
+    // 替换src为data-src，懒加载模式
+    tag = tag.replace(/(src|poster)=/, 'data-$1=');
+
+    // 得出同名不同后缀的webp图片url
+    let webpSrc = src.replace(new RegExp(`\\.(${types})$`, 'i'), '.webp');
+    // data-webp-src附加在img最后
+    tag = tag.replace(REG_CLOSETAG, ` data-webp-${isViedeo ? 'poster' : 'src'}="${webpSrc}"$1`);
+
+    let className = getClassName(tag);
+    // 加上指定className标识，以便业务脚本能够检测是否加载webp图片
+    if (className.indexOf(options.className) === -1) {
+      className += (className ? ' ' : '') + options.className;
+      tag = replaceClassName(tag, className);
+    }
+
+    html = html.replace(img.tag, tag);
+  }
+  return html;
+};
+
+const collect = (html, options) => {
+  let imgs = [];
+  let types = getTypes(options);
   let matchs = getMatchs(html, REG_IMG);
 
   matchs.forEach(match => {
@@ -55,36 +96,85 @@ const replace = (html, options) => {
     // 当图片不符合指定的图片类型，略过
     if (!isSpecialType(src, types)) return;
 
-    // 视频标签
-    let isViedeo = /^<video/.test(img);
-
-    // 替换src为data-src，懒加载模式
-    img = img.replace(/(src|poster)=/, 'data-$1=');
-
-    // 得出同名不同后缀的webp图片url
-    let webpSrc = src.replace(new RegExp(`\\.(${types})$`, 'i'), '.webp');
-    // data-webp-src附加在img最后
-    img = img.replace(REG_CLOSETAG, ` data-webp-${isViedeo ? 'poster' : 'src'}="${webpSrc}"$1`);
-
-    let className = getClassName(img);
-    // 加上指定className标识，以便业务脚本能够检测是否加载webp图片
-    if (className.indexOf(options.className) === -1) {
-      className += (className ? ' ' : '') + options.className;
-      img = replaceClassName(img, className);
-    }
-
-    html = html.replace(match[0], img);
+    imgs.push({
+      tag: img,
+      src: src
+    });
   });
 
-  return html;
+  return imgs;
 };
 
-module.exports = (options) => {
-  options = Object.assign({
+const collectCSS = (html, root, options) => {
+  let imgs = [];
+  let types = getTypes(options);
+  let matchs = getMatchs(html, REG_CSS);
+
+  matchs.forEach(match => {
+    let url = match[1];
+    let style = match[2]; // 内联样式
+    let base = root;
+
+    if (url) {
+      let cssPath = root + url;
+      base = path.dirname(cssPath);
+      style = fs.readFileSync(cssPath, 'utf8');
+    }
+
+    if (!style) return;
+
+    let assets = getMatchs(style, REG_CSS_ASSETS);
+    assets.forEach(asset => {
+      let src = asset[1];
+      // 当图片不符合指定的图片类型，略过
+      if (!isSpecialType(src, types)) return;
+      imgs.push({
+        tag: null,
+        src: path.join(base, src).replace(root, '')
+      });
+    });
+  });
+
+  return imgs;
+};
+
+const getOptions = (options) => {
+  return Object.assign({
     className: 'j-webp',
     imageTypes: 'jpg,jpeg,png',
     ignoreAttr: '_nowebp'
   }, options || {});
+};
+
+module.exports.collect = (options) => {
+  options = getOptions(options);
+  return through2.obj(function(file, enc, callback) {
+    if (file.isNull()) {
+      return callback(null, file);
+    }
+
+    let base = path.dirname(file.path);
+    let html = file.contents.toString();
+    let imgs = collect(html, options);
+    imgs = imgs.concat(collectCSS(html, base, options));
+
+    let files = imgs.map(img => {
+      let contents = fs.readFileSync(base + img.src);
+      return new File({
+        cwd: './',
+        base: './',
+        path: img.src.replace(/^\//, ''),
+        contents: contents
+      })
+    });
+
+    files.forEach(file => this.push(file));
+    callback(null);
+  });
+};
+
+module.exports.replace = (options) => {
+  options = getOptions(options);
   return through2.obj((file, enc, callback) => {
     if (file.isNull()) {
       return callback(null, file);

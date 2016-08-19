@@ -1,6 +1,6 @@
 {
   "name": "@tools/gulp-webp-adapter",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "搜寻页面中的img标签图片，适配webp格式图片",
   "contributors": [
     "Luoying <luoying@fxiaoke.com>"

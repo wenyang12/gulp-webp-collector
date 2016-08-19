@@ -24,8 +24,6 @@ const REG_CLASSNAME = /class=["|']([^"']+)["|']/i;
 // 匹配img标签闭合符号
 const REG_CLOSETAG = /(\/?>)$/;
 
-// 匹配css资源，link外链或style内联样式
-const REG_CSS = /(?:<link.*href=["|'](.+\.css)["|'].*\/?>|<style.*>([^<]*)<\/style>)/gi;
 // 匹配css中的图片资源
 const REG_CSS_ASSETS = /url\(([^\)]+)\)/gi;
 
@@ -53,9 +51,10 @@ const replaceClassName = (img, className) => {
 
 const getTypes = (options) => options.imageTypes.split(',').join('|');
 
+// 匹配并替换页面中的img标签：data-src & data-webp-src
 const replace = (html, options) => {
   let types = getTypes(options);
-  let imgs = collect(html, options);
+  let imgs = getPageImages(html, options);
   for (let img of imgs) {
     let tag = img.tag;
     let src = img.src;
@@ -79,10 +78,59 @@ const replace = (html, options) => {
 
     html = html.replace(img.tag, tag);
   }
+
   return html;
 };
 
-const collect = (html, options) => {
+const replaceCSS = (style, options) => {
+  let types = getTypes(options);
+  let imgs = getStyleImages(style, options);
+
+  for (let img of imgs) {
+    let src = img.src;
+    // webp版本图片
+    let webpSrc = src.replace(new RegExp(`\\.(${types})$`, 'i'), '.webp');
+
+    // 此图片样式规则所在位置
+    let index = style.indexOf(img.rule);
+    // 此图片样式规则的开始大括号位置
+    let prefix = style.lastIndexOf('{', index);
+    // 此图片样式规则的结束大括号位置
+    let suffix = style.indexOf('}', index);
+    // 此图片样式规则名的开始位置
+    let start = style.lastIndexOf('}', prefix);
+
+    // 获取样式规则名
+    let name = style.substring(start + 1, prefix);
+    // webp图片样式规则
+    let webpRule = `${options.prefix} ${name}{background-image:url(${webpSrc})}`;
+    // 在此图片样式规则之后插入一条webp图片样式规则
+    style = style.slice(0, suffix + 1) + webpRule + style.slice(suffix + 1);
+  }
+
+  return style;
+};
+
+// 从样式表中提取图片
+const getStyleImages = (style, options) => {
+  let imgs = [];
+  let types = getTypes(options);
+  let matchs = getMatchs(style, REG_CSS_ASSETS);
+
+  matchs.forEach(match => {
+    let src = match[1];
+    // 当图片不符合指定的图片类型，略过
+    if (!isSpecialType(src, types)) return;
+    imgs.push({
+      rule: match[0],
+      src: src
+    });
+  });
+  return imgs;
+};
+
+// 从页面上提取图片
+const getPageImages = (html, options) => {
   let imgs = [];
   let types = getTypes(options);
   let matchs = getMatchs(html, REG_IMG);
@@ -105,58 +153,24 @@ const collect = (html, options) => {
   return imgs;
 };
 
-const collectCSS = (html, root, options) => {
-  let imgs = [];
-  let types = getTypes(options);
-  let matchs = getMatchs(html, REG_CSS);
-
-  matchs.forEach(match => {
-    let url = match[1];
-    let style = match[2]; // 内联样式
-    let base = root;
-
-    if (url) {
-      let cssPath = root + url;
-      base = path.dirname(cssPath);
-      style = fs.readFileSync(cssPath, 'utf8');
-    }
-
-    if (!style) return;
-
-    let assets = getMatchs(style, REG_CSS_ASSETS);
-    assets.forEach(asset => {
-      let src = asset[1];
-      // 当图片不符合指定的图片类型，略过
-      if (!isSpecialType(src, types)) return;
-      imgs.push({
-        tag: null,
-        src: path.join(base, src).replace(root, '')
-      });
-    });
-  });
-
-  return imgs;
-};
-
 const getOptions = (options) => {
   return Object.assign({
+    prefix: 'html.webp',
     className: 'j-webp',
     imageTypes: 'jpg,jpeg,png',
     ignoreAttr: '_nowebp'
   }, options || {});
 };
 
-module.exports.collect = (options) => {
-  options = getOptions(options);
-  return through2.obj(function(file, enc, callback) {
+const _collect = function(collector, options) {
+  return function(file, enc, callback) {
     if (file.isNull()) {
       return callback(null, file);
     }
 
-    let base = path.dirname(file.path);
+    let base = options.base || path.dirname(file.path);
     let html = file.contents.toString();
-    let imgs = collect(html, options);
-    imgs = imgs.concat(collectCSS(html, base, options));
+    let imgs = collector(html, options);
 
     let files = imgs.map(img => {
       let contents = fs.readFileSync(base + img.src);
@@ -170,18 +184,49 @@ module.exports.collect = (options) => {
 
     files.forEach(file => this.push(file));
     callback(null);
-  });
+  }
 };
 
-module.exports.replace = (options) => {
-  options = getOptions(options);
-  return through2.obj((file, enc, callback) => {
+const _replace = function(replactor, options) {
+  return function(file, enc, callback) {
     if (file.isNull()) {
       return callback(null, file);
     }
 
     let html = file.contents.toString();
-    file.contents = new Buffer(replace(html, options));
+    file.contents = new Buffer(replactor(html, options));
     callback(null, file);
+  }
+};
+
+// 收集页面上的图片
+module.exports.collect = (options) => {
+  options = getOptions(options);
+  return through2.obj(function(file, enc, callback) {
+    return _collect(getPageImages, options).call(this, file, enc, callback);
+  });
+};
+
+// 收集css样式表中的图片
+module.exports.collectCSS = (options) => {
+  options = getOptions(options);
+  return through2.obj(function(file, enc, callback) {
+    return _collect(getStyleImages, options).call(this, file, enc, callback);
+  });
+};
+
+// 将页面上的图片适配webp版本
+module.exports.replace = (options) => {
+  options = getOptions(options);
+  return through2.obj((file, enc, callback) => {
+    return _replace(replace, options)(file, enc, callback);
+  });
+};
+
+// 将css样式表中的图片适配webp版本
+module.exports.replaceCSS = (options) => {
+  options = getOptions(options);
+  return through2.obj((file, enc, callback) => {
+    return _replace(replaceCSS, options)(file, enc, callback);
   });
 };

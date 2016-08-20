@@ -16,6 +16,7 @@ const path = require('path');
 const through2 = require('through2');
 const gutil = require('gulp-util');
 const File = gutil.File;
+const getMatchs = require('@tools/matchs');
 
 // 搜索img标签
 const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
@@ -26,15 +27,6 @@ const REG_CLOSETAG = /(\/?>)$/;
 
 // 匹配css中的图片资源
 const REG_CSS_ASSETS = /url\(([^\)]+)\)/gi;
-
-const getMatchs = (data, reg) => {
-  let matchs = [];
-  let match = null;
-  while ((match = reg.exec(data))) {
-    matchs.push(match);
-  }
-  return matchs;
-};
 
 const isSpecialType = (src, types) => new RegExp(`\\.(${types})$`, 'i').test(src);
 
@@ -52,7 +44,7 @@ const replaceClassName = (img, className) => {
 const getTypes = (options) => options.imageTypes.split(',').join('|');
 
 // 匹配并替换页面中的img标签：data-src & data-webp-src
-const replace = (html, options) => {
+const replacePage = (html, options) => {
   let types = getTypes(options);
   let imgs = getPageImages(html, options);
   for (let img of imgs) {
@@ -175,8 +167,6 @@ const _collect = function(collector, options) {
     let files = imgs.map(img => {
       let contents = fs.readFileSync(base + img.src);
       return new File({
-        cwd: './',
-        base: './',
         path: img.src.replace(/^\//, ''),
         contents: contents
       })
@@ -201,32 +191,28 @@ const _replace = function(replactor, options) {
 
 // 收集页面上的图片
 module.exports.collect = (options) => {
-  options = getOptions(options);
+  let c = _collect(getPageImages, getOptions(options));
   return through2.obj(function(file, enc, callback) {
-    return _collect(getPageImages, options).call(this, file, enc, callback);
+    return c.call(this, file, enc, callback);
   });
 };
 
 // 收集css样式表中的图片
 module.exports.collectCSS = (options) => {
-  options = getOptions(options);
+  let c = _collect(getStyleImages, getOptions(options));
   return through2.obj(function(file, enc, callback) {
-    return _collect(getStyleImages, options).call(this, file, enc, callback);
+    return c.call(this, file, enc, callback);
   });
 };
 
 // 将页面上的图片适配webp版本
 module.exports.replace = (options) => {
-  options = getOptions(options);
-  return through2.obj((file, enc, callback) => {
-    return _replace(replace, options)(file, enc, callback);
-  });
+  let r = _replace(replacePage, getOptions(options));
+  return through2.obj((file, enc, callback) => r(file, enc, callback));
 };
 
 // 将css样式表中的图片适配webp版本
 module.exports.replaceCSS = (options) => {
-  options = getOptions(options);
-  return through2.obj((file, enc, callback) => {
-    return _replace(replaceCSS, options)(file, enc, callback);
-  });
+  let r = _replace(replaceCSS, getOptions(options));
+  return through2.obj((file, enc, callback) => r(file, enc, callback));
 };

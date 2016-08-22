@@ -1,4 +1,4 @@
-# gulp-webp-adapter
+# gulp-webp-collector
 
 > 搜寻页面中的img标签图片，适配webp格式图片
 > 同时也支持适配video标签的poster图片

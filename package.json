@@ -1,6 +1,6 @@
 {
-  "name": "@tools/gulp-webp-adapter",
-  "version": "1.1.2",
+  "name": "@tools/gulp-webp-collector",
+  "version": "1.1.3",
   "description": "搜寻页面中的img标签图片，适配webp格式图片",
   "contributors": [
     "Luoying <luoying@fxiaoke.com>"
@@ -15,7 +15,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "http://git.firstshare.cn/fe-tools/gulp-webp-adapter.git"
+    "url": "http://git.firstshare.cn/fe-tools/gulp-webp-collector.git"
   },
   "author": "luoying",
   "license": "ISC",

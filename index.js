@@ -178,14 +178,14 @@ module.exports.collect = (options) => {
   return through2.obj(function(file, enc, callback) {
     if (file.isNull()) return callback(null, file);
 
-    let dirname = path.dirname(file.path);
+    let base = file.base;
     let html = file.contents.toString();
 
     // 搜集页面上的img标签图片
     let imgs = collectPage(html, options);
 
     // 提取页面引用的css样式表
-    let styles = getStyles(html, dirname);
+    let styles = getStyles(html, base);
     for (let style of styles) {
       // 搜集样式表中的图片
       let s = collectStyle(style.content, options);
@@ -193,9 +193,10 @@ module.exports.collect = (options) => {
     }
 
     for (let img of imgs) {
-      let contents = fs.readFileSync(dirname + img.src);
+      let contents = fs.readFileSync(path.join(base + img.src));
       let file = new File({
-        path: img.src.replace(/^\//, ''),
+        base: base,
+        path: path.join(base, img.src),
         contents: contents
       });
       this.push(file);
@@ -211,15 +212,16 @@ module.exports.replace = (options) => {
   return through2.obj(function(file, enc, callback) {
     if (file.isNull()) return callback(null, file);
 
-    let dirname = path.dirname(file.path);
+    let base = file.base;
     let html = file.contents.toString();
     file.contents = new Buffer(replacePage(html, options));
 
-    let styles = getStyles(html, dirname);
+    let styles = getStyles(html, base);
     for (let style of styles) {
       style.content = replaceStyle(style.content, options);
       this.push(new File({
-        path: style.link.replace(/^\//, ''),
+        base: base,
+        path: path.join(base, style.link),
         contents: new Buffer(style.content)
       }));
     }

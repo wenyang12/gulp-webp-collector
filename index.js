@@ -19,9 +19,11 @@ const gutil = require('gulp-util');
 const File = gutil.File;
 const getMatchs = require('@tools/matchs');
 
+const typesReg = (types) => types.length > 1 ? `(?:${types.join('|')})` : types.join('');
+
 // 搜索img标签
-const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
-const REG_IMG_ALL = /(?:src|poster)=["|']([^"']+)["|']/gi;
+const REG_IMG = (types) => new RegExp(`<(?:img|video).*\\s+(?:src|poster)=["|']?([^"']+\\.${typesReg(types)})["|']?[^>]*\\/?>`, 'gi');
+const REG_IMG_ALL = (types) => new RegExp(`(?:src|poster)=["|']?([^"']+\\.${typesReg(types)})["|']?`, 'gi');
 // 匹配className属性
 const REG_CLASSNAME = /class=["|']([^"']+)["|']/i;
 // 匹配img标签闭合符号
@@ -30,7 +32,7 @@ const REG_CLOSETAG = /(\/?>)$/;
 // 匹配css资源，link外链或style内联样式
 const REG_CSS = /<link.*href=["|'](.+\.css)["|'].*\/?>/gi;
 // 匹配css中的图片资源
-const REG_CSS_ASSETS = /url\(([^\)]+)\)/gi;
+const REG_CSS_ASSETS = (types) => new RegExp(`url\\(([^\\)]+\\.${typesReg(types)})\\)`, 'gi');
 
 const getOptions = (options) => {
   let opts = Object.assign({
@@ -39,11 +41,9 @@ const getOptions = (options) => {
     imageTypes: 'jpg,jpeg,png',
     ignoreAttr: '_nowebp'
   }, options || {});
-  opts.imageTypes = opts.imageTypes.split(',').join('|');
+  opts.imageTypes = opts.imageTypes.split(',');
   return opts;
 };
-
-const isSpecialType = (src, types) => new RegExp(`\\.(${types})$`, 'i').test(src);
 
 // 提取img标签上的className属性
 const getClassName = (img) => {
@@ -76,20 +76,16 @@ const getStyles = (html, base) => {
 // 从页面上搜集图片
 const collectPage = (html, options) => {
   let imgs = [];
-  let matchs = getMatchs(html, options.all ? REG_IMG_ALL : REG_IMG);
+  let matchs = getMatchs(html, options.all ? REG_IMG_ALL(options.imageTypes) : REG_IMG(options.imageTypes));
 
   matchs.forEach(match => {
     let img = match[0];
     // 包含忽略私有属性的img标签，略过
     if (options.ignoreAttr && img.indexOf(options.ignoreAttr) >= 0) return;
 
-    let src = match[1];
-    // 当图片不符合指定的图片类型，略过
-    if (!isSpecialType(src, options.imageTypes)) return;
-
     imgs.push({
       tag: img,
-      src: src
+      src: match[1]
     });
   });
 
@@ -99,17 +95,12 @@ const collectPage = (html, options) => {
 // 从样式表中提取图片
 const collectStyle = (style, options) => {
   let imgs = [];
-  let matchs = getMatchs(style, REG_CSS_ASSETS);
+  let matchs = getMatchs(style, REG_CSS_ASSETS(options.imageTypes));
 
-  matchs.forEach(match => {
-    let src = match[1];
-    // 当图片不符合指定的图片类型，略过
-    if (!isSpecialType(src, options.imageTypes)) return;
-    imgs.push({
-      rule: match[0],
-      src: src
-    });
-  });
+  matchs.forEach(match => imgs.push({
+    rule: match[0],
+    src: match[1]
+  }));
   return imgs;
 };
 
@@ -127,7 +118,7 @@ const replacePage = (html, options) => {
     tag = tag.replace(/(src|poster)=/, 'data-$1=');
 
     // 得出同名不同后缀的webp图片url
-    let webpSrc = src.replace(new RegExp(`\\.(${options.imageTypes})$`, 'i'), '.webp');
+    let webpSrc = src.replace(new RegExp(`\\.${typesReg(options.imageTypes)}$`, 'i'), '.webp');
     // data-webp-src附加在img最后
     tag = tag.replace(REG_CLOSETAG, ` data-webp-${isViedeo ? 'poster' : 'src'}="${webpSrc}"$1`);
 
@@ -151,7 +142,7 @@ const replaceStyle = (style, options) => {
   for (let img of imgs) {
     let src = img.src;
     // webp版本图片
-    let webpSrc = src.replace(new RegExp(`\\.(${options.imageTypes})$`, 'i'), '.webp');
+    let webpSrc = src.replace(new RegExp(`\\.${typesReg(options.imageTypes)}$`, 'i'), '.webp');
 
     // 此图片样式规则所在位置
     let index = style.indexOf(img.rule);
@@ -194,12 +185,12 @@ module.exports.collect = (options) => {
     }
 
     for (let img of imgs) {
-      let pathname = path.join(base + img.src);
+      let pathname = path.join(base, img.src);
       try {
         let contents = fs.readFileSync(pathname);
         let file = new File({
-          base: base,
-          path: options.base ? path.join(options.base, path.basename(img.src)) : path.join(base, img.src),
+          base: options.base || base,
+          path: options.base ? 'images/' + path.basename(img.src) : pathname,
           contents: contents
         });
         this.push(file);

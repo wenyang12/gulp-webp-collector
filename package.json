@@ -1,6 +1,6 @@
 {
   "name": "@tools/gulp-webp-collector",
-  "version": "1.1.4",
+  "version": "1.1.6",
   "description": "搜寻页面中的img标签图片，适配webp格式图片",
   "contributors": [
     "Luoying <luoying@fxiaoke.com>"
@@ -21,6 +21,7 @@
   "license": "ISC",
   "dependencies": {
     "@tools/matchs": "^1.0.0",
+    "gulp-util": "^3.0.7",
     "through2": "^2.0.1"
   },
   "devDependencies": {

@@ -21,6 +21,7 @@ const getMatchs = require('@tools/matchs');
 
 // 搜索img标签
 const REG_IMG = /<(?:img|video).*\s+(?:src|poster)=["|']([^"']+)["|'][^>]*>/gi;
+const REG_IMG_ALL = /(?:src|poster)=["|']([^"']+)["|']/gi;
 // 匹配className属性
 const REG_CLASSNAME = /class=["|']([^"']+)["|']/i;
 // 匹配img标签闭合符号
@@ -75,12 +76,12 @@ const getStyles = (html, base) => {
 // 从页面上搜集图片
 const collectPage = (html, options) => {
   let imgs = [];
-  let matchs = getMatchs(html, REG_IMG);
+  let matchs = getMatchs(html, options.all ? REG_IMG_ALL : REG_IMG);
 
   matchs.forEach(match => {
     let img = match[0];
     // 包含忽略私有属性的img标签，略过
-    if (img.indexOf(options.ignoreAttr) >= 0) return;
+    if (options.ignoreAttr && img.indexOf(options.ignoreAttr) >= 0) return;
 
     let src = match[1];
     // 当图片不符合指定的图片类型，略过
@@ -193,13 +194,18 @@ module.exports.collect = (options) => {
     }
 
     for (let img of imgs) {
-      let contents = fs.readFileSync(path.join(base + img.src));
-      let file = new File({
-        base: base,
-        path: path.join(base, img.src),
-        contents: contents
-      });
-      this.push(file);
+      let pathname = path.join(base + img.src);
+      try {
+        let contents = fs.readFileSync(pathname);
+        let file = new File({
+          base: base,
+          path: options.base ? path.join(options.base, path.basename(img.src)) : path.join(base, img.src),
+          contents: contents
+        });
+        this.push(file);
+      } catch (e) {
+        console.log(`not found the ${pathname}`);
+      }
     }
 
     callback();
